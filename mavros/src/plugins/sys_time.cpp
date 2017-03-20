@@ -236,6 +236,16 @@ private:
 	{
 		uint64_t now_ns = ros::Time::now().toNSec();
 
+		// detect sim time by comparing to linux time for March 17, 2017
+		// in simulation time stamps for sensor data are recorded directly from gazebo
+		// as long as these are properly passed through to the px4 firmware then the
+		// true time offset should be exactly 0
+		if (now_ns < 1489779372000000000)
+		{
+			m_uas->set_time_offset(0);
+			return;
+		}
+
 		if (tsync.tc1 == 0) {
 			send_timesync_msg(now_ns, tsync.ts1);
 			return;
@@ -252,7 +262,7 @@ private:
 				dt_diag.set_timestamp(tsync.tc1);
 
 				ROS_WARN_THROTTLE_NAMED(10, "time", "TM: Clock skew detected (%0.9f s). "
-						"Hard syncing clocks.", dt / 1e9);
+						"Hard syncing clocks. Offset = %ld", dt / 1e9, time_offset_ns);
 			}
 			else {
 				average_offset(offset_ns);
