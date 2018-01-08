@@ -24,6 +24,7 @@
 #include <geometry_msgs/TransformStamped.h>
 
 #include <nav_msgs/Odometry.h>
+#include <tf/transform_datatypes.h> 
 
 namespace mavros {
 namespace std_plugins {
@@ -36,7 +37,8 @@ class LocalPositionPlugin : public plugin::PluginBase {
 public:
 	LocalPositionPlugin() : PluginBase(),
 		lp_nh("~local_position"),
-		tf_send(false)
+		tf_send(false),
+		tf_invert(false)
 	{ }
 
 	void initialize(UAS &uas_)
@@ -48,7 +50,8 @@ public:
 		lp_nh.param<std::string>("frame_id", frame_id, "map");
 		// Important tf subsection
 		// Report the transform from world to base_link here.
-		lp_nh.param("tf/send", tf_send, false);
+		lp_nh.param("tf/send", tf_send, true);
+		lp_nh.param("tf/invert", tf_invert, false);
 		lp_nh.param<std::string>("tf/frame_id", tf_frame_id, "map");
 		lp_nh.param<std::string>("tf/child_frame_id", tf_child_frame_id, "base_link");
 		// Debug tf info
@@ -78,6 +81,7 @@ private:
 	std::string tf_frame_id;	//!< origin for TF
 	std::string tf_child_frame_id;	//!< frame for TF
 	bool tf_send;
+	bool tf_invert;
 	bool tf_send_fcu;	//!< report NED->aircraft in tf tree
 
 	void handle_local_position_ned(const mavlink::mavlink_message_t *msg, mavlink::common::msg::LOCAL_POSITION_NED &pos_ned)
@@ -140,14 +144,28 @@ private:
 		local_velocity.publish(twist);
 
 		if (tf_send) {
+
 			geometry_msgs::TransformStamped transform;
-
 			transform.header.stamp = pose->header.stamp;
-			transform.header.frame_id = tf_frame_id;
-			transform.child_frame_id = tf_child_frame_id;
 
-			transform.transform.rotation = enu_orientation_msg;
-			tf::vectorEigenToMsg(enu_position, transform.transform.translation);
+			if (tf_invert)
+			{
+				tf::Stamped<tf::Pose> orig_transform;
+				tf::poseStampedMsgToTF(*pose, orig_transform);
+
+				transform.header.frame_id = tf_child_frame_id;
+				transform.child_frame_id = tf_frame_id;
+
+				tf::transformTFToMsg(orig_transform.inverse(), transform.transform);
+			}
+			else
+			{
+				transform.header.frame_id = tf_frame_id;
+				transform.child_frame_id = tf_child_frame_id;
+
+				transform.transform.rotation = enu_orientation_msg;
+				tf::vectorEigenToMsg(enu_position, transform.transform.translation);
+			}
 
 			m_uas->tf2_broadcaster.sendTransform(transform);
 		}
